@@ -1,32 +1,22 @@
+import apache_beam as beam
+import argparse
+from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.io.gcp.bigquery import WriteToBigQuery
+from apache_beam.io.gcp import bigquery
 from google.cloud import bigquery
-from google.oauth2 import service_account
-import time
-import json
-import pandas
-
-#Id del proyecto
-id_proyecto = "entrenamiento-gcp-267213" 
-
-#Path de donde se encuentran los credenciales
-credenciales = service_account.Credentials.from_service_account_file(r"C:\Users\Jhonatan\Documents\BigQuery\entrenamiento-gcp-267213-1da7a0e41454.json") 
+from sys import argv
 
 #Realizar una conexion con el cliente de bigquery
-cliente = bigquery.Client(project=id_proyecto,credentials=credenciales)
-
-#Tomar el tiempo en el que inicio el proceso y enviar un mensaje
-Inicio = time.time()
-print("Inicio Proceso 👏")
+cliente = bigquery.Client()
 
 #Consulta realizada con los datos necesarios para trabajar
 query = """ 
         SELECT
             id_cia,id_co,instalacion,id_bodega,CAST(fecha AS STRING) as fecha,CAST(hora AS STRING) as hora ,ubicacion,referencia,descripcion,lote,unidad_medida,valor_inventario,usuario,valor_equivalente,cantidad_total,medida_caj,cantidad_caja,equiv_caja,vacio,nro_tarjeta,cajas_estiba,estiba_completa,tipo_medida,unidad_estiba,conteo,
             CONCAT(id_cia,"-",id_co,"-",instalacion,"-",id_bodega,"-",fecha,"-",ubicacion,"-",referencia,"-",nro_tarjeta) AS llave1,
-            CONCAT(id_cia,"-",id_co,"-",instalacion,"-",id_bodega,"-",fecha,"-",ubicacion,"-",referencia,"-",nro_tarjeta,"-",cantidad_total) AS llave2,
-            ROW_NUMBER() OVER (PARTITION BY id_cia, id_co, instalacion, id_bodega, fecha, ubicacion,referencia, nro_tarjeta ORDER BY conteo) AS row_num,
-            ROW_NUMBER() OVER (PARTITION BY id_cia, id_co, instalacion, id_bodega, fecha, ubicacion,referencia, nro_tarjeta,cantidad_total ORDER BY conteo) AS row_num2
+            CONCAT(id_cia,"-",id_co,"-",instalacion,"-",id_bodega,"-",fecha,"-",ubicacion,"-",referencia,"-",nro_tarjeta,"-",cantidad_total) AS llave2
             FROM
-            `entrenamiento-gcp-267213.training.conteos2` order by id_cia, id_co, instalacion, id_bodega, fecha, ubicacion,referencia, nro_tarjeta, conteo LIMIT 10
+            `proyecto-fabio-tafur-datos.LLOREDA.conteosAd` order by id_cia, id_co, instalacion, id_bodega, fecha, ubicacion,referencia, nro_tarjeta, conteo
         """
 
 #Ejecucion del query
@@ -149,12 +139,15 @@ for x in range(0,len(LlavesUnicas)):
             #Añadir los datos a un lugar para luego trabajarlos
             Datos.append(Organizacion)
 
-with open("Datos.json",'w') as archivo:
-    for dato in Datos:
-        json.dump(dato,archivo)
-        archivo.write('\n')
+if __name__ == '__main__':
 
-#Toma el tiempo final del proceso y envia el mensaje de finalizacion y el tiempo que se demoro ejecutando es en segundos
-Final = time.time()
-print("Proceso Finalizado 😊")   
-print("Tiempo Ejecucion: ",Final-Inicio)       
+    parser = argparse.ArgumentParser()
+    known_args = parser.parse_known_args(argv)
+
+    p = beam.Pipeline(options=PipelineOptions())
+
+    (p  | 'ReadData' >> beam.Create(Datos)
+        | 'WriteToCSV' >> beam.io.WriteToText('Files/Datos.csv'))
+        #| 'WriteToBigQuery' >> WriteToBigQuery(table=f'{PROJECT_ID}:{DATASET_ID}.{TABLE_NAME}',schema=SCHEMA,create_disposition=bigquery.BigQueryDisposition.CREATE_IF_NEEDED,write_disposition=bigquery.BigQueryDisposition.WRITE_TRUNCATE))
+    result = p.run()
+    result.wait_until_finish()
